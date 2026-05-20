@@ -1,0 +1,8 @@
+# 试验1：禁用记忆库（默认），处理test集2个视频
+python your_script_name.py
+
+# 试验2：启用记忆库，处理test集2个视频
+python testmemory.py --use_memory
+
+# 试验3：启用记忆库，处理train集5个视频，自定义输出文件
+python /root/autodl-tmp/video_temporal_grounding/testmemory.py --use_memory  --max_videos 1 
