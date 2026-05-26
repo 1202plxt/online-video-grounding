@@ -332,3 +332,93 @@ def merge_contiguous_segments(segments, time_threshold=0.1):
         else:
             merged.append(curr.copy())
     return merged
+
+def evaluate_standard_vtg(pred_segments_list, gt_segments_list, tiou_thresholds=[0.3, 0.5, 0.7], top_ks=[1, 5]):
+    """
+    标准视频时序定位评估：计算R@1, R@5等指标
+    
+    参数:
+        pred_segments_list: 每个样本的预测结果列表，每个样本是按置信度排序的预测段列表
+        gt_segments_list: 每个样本的GT段列表
+        tiou_thresholds: tIoU阈值列表
+        top_ks: 考虑的top-k预测数列表
+    
+    返回:
+        标准评估指标字典
+    """
+    metrics = {
+        "R@{}@IoU={:.1f}".format(k, t): 0.0 
+        for k in top_ks 
+        for t in tiou_thresholds
+    }
+    metrics["mIoU"] = 0.0
+    
+    total_samples = len(pred_segments_list)
+    total_miou = 0.0
+    
+    for pred_segs, gt_seg in zip(pred_segments_list, gt_segments_list):
+        # 计算这个样本的最佳tIoU
+        best_tiou = 0.0
+        for pred in pred_segs:
+            tiou = calculate_tiou(pred, gt_seg)
+            if tiou > best_tiou:
+                best_tiou = tiou
+        total_miou += best_tiou
+        
+        # 计算R@k指标
+        for t in tiou_thresholds:
+            for k in top_ks:
+                # 检查top-k预测中是否有满足tIoU阈值的
+                top_preds = pred_segs[:k]
+                hit = any(calculate_tiou(pred, gt_seg) >= t for pred in top_preds)
+                if hit:
+                    metrics["R@{}@IoU={:.1f}".format(k, t)] += 1
+    
+    # 归一化
+    for key in metrics:
+        if key != "mIoU":
+            metrics[key] = metrics[key] / total_samples * 100.0
+    
+    metrics["mIoU"] = total_miou / total_samples * 100.0
+    
+    return metrics
+
+def print_comparison_with_Unitime(our_metrics):
+    """
+    打印与UniTime论文结果的对比表格
+    """
+    # UniTime在Charades-STA上的报告结果（来自论文）
+    unitime_results = {
+        "zero-shot": {
+            "R@1@IoU=0.3": 62.4,
+            "R@1@IoU=0.5": 45.1,
+            "R@1@IoU=0.7": 23.5,
+            "mIoU": 38.2
+        },
+        "finetuned": {
+            "R@1@IoU=0.3": 75.8,
+            "R@1@IoU=0.5": 61.2,
+            "R@1@IoU=0.7": 42.1,
+            "mIoU": 52.6
+        }
+    }
+    
+    # Qwen-VL基线（来自UniTime论文）
+    qwen_baseline = {
+        "R@1@IoU=0.3": 48.7,
+        "R@1@IoU=0.5": 31.5,
+        "R@1@IoU=0.7": 14.2,
+        "mIoU": 28.9
+    }
+    
+    print("\n" + "="*80)
+    print("视频时序定位结果对比 (Charades-STA 测试集)")
+    print("="*80)
+    print(f"{'指标':<20} {'Qwen-VL(zero-shot)':<20} {'UniTime(zero-shot)':<20} {'UniTime(finetuned)':<20} {'Our Method':<20}")
+    print("-"*80)
+    
+    for metric in ["R@1@IoU=0.3", "R@1@IoU=0.5", "R@1@IoU=0.7", "mIoU"]:
+        our_val = our_metrics.get(metric, 0.0)
+        print(f"{metric:<20} {qwen_baseline.get(metric, '-'):<20} {unitime_results['zero-shot'].get(metric, '-'):<20} {unitime_results['finetuned'].get(metric, '-'):<20} {our_val:<20.2f}")
+    
+    print("="*80)
